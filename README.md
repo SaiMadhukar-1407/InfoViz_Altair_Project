@@ -1,4 +1,4 @@
-# Information-Visualization-HW-1
+# Information-Visualization-Altair-Project
 
 To run the code:
 1) Install all the requirements:
