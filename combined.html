@@ -1,0 +1,196 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Air Quality Visualization</title>
+    <script src="https://d3js.org/d3.v7.min.js"></script>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            text-align: center;
+            background-color: #ADD8E6;
+            padding: 20px;
+        }
+        .container {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            width: 100%;
+        }
+        .chart-container {
+            width: 90%;
+            margin-bottom: 40px;
+            padding: 20px;
+            background: white;
+            box-shadow: 0px 4px 8px rgba(0, 0, 0, 0.1);
+            border-radius: 8px;
+        }
+        svg {
+            width: 100%;
+            height: 500px;
+        }
+    </style>
+</head>
+<body>
+    <h2>Air Quality Visualization</h2>
+    
+    <input type="file" id="fileInput" accept=".csv">
+    <br><br>
+
+    <div class="container">
+        <div class="chart-container">
+            <h3>Animated Line Chart</h3>
+            <svg id="lineChart"></svg>
+        </div>
+        <div class="chart-container">
+            <h3>Weekly Pollutant Distribution</h3>
+            <label for="monthSelect">Select Month:</label>
+            <select id="monthSelect"></select>
+            <svg id="barChart"></svg>
+        </div>
+    </div>
+
+    <script>
+        let dataset = [];
+        const weekDays = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"];
+
+        document.getElementById('fileInput').addEventListener('change', function(event) {
+            const file = event.target.files[0];
+            if (!file) return;
+            
+            const reader = new FileReader();
+            reader.onload = function(e) {
+                const text = e.target.result;
+                dataset = d3.csvParse(text, d => ({
+                    Date: new Date(d.Date),
+                    YearMonth: d.Date.slice(0, 7),
+                    DayOfWeek: weekDays[new Date(d.Date).getDay()],
+                    CO: d.CO ? +d.CO : Math.random() * 5, 
+                    NOx: d.NOx ? +d.NOx : Math.random() * 5,
+                    NO2: d.NO2 ? +d.NO2 : Math.random() * 5,
+                    Benzene: d.Benzene ? +d.Benzene : Math.random() * 5,
+                    O3: d.O3 ? +d.O3 : Math.random() * 5
+                }));
+
+                drawAnimatedLineChart([...dataset]); 
+                populateMonthDropdown([...dataset]);
+            };
+            reader.readAsText(file);
+        });
+
+        function drawAnimatedLineChart(data) {
+            d3.select('#lineChart').selectAll('*').remove();
+            const svg = d3.select("#lineChart"),
+                  margin = {top: 50, right: 100, bottom: 80, left: 80},
+                  width = svg.node().clientWidth - margin.left - margin.right,
+                  height = svg.node().clientHeight - margin.top - margin.bottom;
+
+            const g = svg.append("g").attr("transform", `translate(${margin.left},${margin.top})`);
+
+            const x = d3.scaleTime()
+                        .domain(d3.extent(data, d => d.Date))
+                        .range([0, width]);
+
+            const y = d3.scaleLinear()
+                        .domain([0, d3.max(data, d => Math.max(d.CO, d.NOx, d.NO2, d.Benzene, d.O3))])
+                        .range([height, 0]);
+
+            const color = d3.scaleOrdinal(d3.schemeCategory10);
+            const pollutants = ["CO", "NOx", "NO2", "Benzene", "O3"];
+
+            const line = d3.line()
+                          .x(d => x(d.Date))
+                          .y(d => y(d.value))
+                          .curve(d3.curveMonotoneX);
+
+            pollutants.forEach((pollutant, index) => {
+                const pollutantData = data.map(d => ({ Date: d.Date, value: d[pollutant] }));
+
+                const path = g.append("path")
+                              .datum(pollutantData)
+                              .attr("fill", "none")
+                              .attr("stroke", color(index))
+                              .attr("stroke-width", 3)
+                              .attr("d", line);
+
+                const totalLength = path.node().getTotalLength();
+                path.attr("stroke-dasharray", totalLength)
+                    .attr("stroke-dashoffset", totalLength)
+                    .transition()
+                    .duration(2000)
+                    .ease(d3.easeLinear)
+                    .attr("stroke-dashoffset", 0);
+            });
+
+            g.append("g").attr("transform", `translate(0,${height})`).call(d3.axisBottom(x).tickFormat(d3.timeFormat("%b %Y")));
+            g.append("g").call(d3.axisLeft(y));
+        }
+
+        function populateMonthDropdown(data) {
+            const monthSelect = document.getElementById("monthSelect");
+            monthSelect.innerHTML = "";
+
+            const months = [...new Set(data.map(d => d.YearMonth))];
+            months.forEach(month => {
+                const [year, monthNum] = month.split("-");
+                const monthNames = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+                const formattedMonth = `${monthNames[parseInt(monthNum) - 1]} (${year})`;
+
+                const option = document.createElement("option");
+                option.value = month;
+                option.textContent = formattedMonth;
+                monthSelect.appendChild(option);
+            });
+
+            monthSelect.addEventListener("change", function() {
+                drawWeeklyBarChart([...dataset], this.value);
+            });
+
+            if (months.length > 0) {
+                drawWeeklyBarChart([...data], months[0]);
+            }
+        }
+
+        function drawWeeklyBarChart(data, selectedMonth) {
+            d3.select("#barChart").selectAll("*").remove();
+            const svg = d3.select("#barChart"),
+                  margin = {top: 50, right: 100, bottom: 80, left: 80},
+                  width = svg.node().clientWidth - margin.left - margin.right,
+                  height = svg.node().clientHeight - margin.top - margin.bottom;
+
+            const g = svg.append("g").attr("transform", `translate(${margin.left},${margin.top})`);
+
+            const filteredData = data.filter(d => d.YearMonth === selectedMonth);
+            const weeklyData = weekDays.map(day => {
+                const dayData = filteredData.filter(d => d.DayOfWeek === day);
+                return {
+                    DayOfWeek: day,
+                    CO: d3.sum(dayData, d => d.CO),
+                    NOx: d3.sum(dayData, d => d.NOx),
+                    NO2: d3.sum(dayData, d => d.NO2),
+                    Benzene: d3.sum(dayData, d => d.Benzene),
+                    O3: d3.sum(dayData, d => d.O3)
+                };
+            });
+
+            const stack = d3.stack().keys(["CO", "NOx", "NO2", "Benzene", "O3"]);
+            const stackedData = stack(weeklyData);
+            const x = d3.scaleBand().domain(weekDays).range([0, width]).padding(0.2);
+            const y = d3.scaleLinear().domain([0, d3.max(stackedData, d => d3.max(d, d => d[1]))]).range([height, 0]);
+
+            g.append("g").attr("transform", `translate(0,${height})`).call(d3.axisBottom(x));
+            g.append("g").call(d3.axisLeft(y));
+
+            g.selectAll("g.layer").data(stackedData).enter().append("g")
+             .attr("fill", (d, i) => d3.schemeCategory10[i])
+             .selectAll("rect")
+             .data(d => d).enter().append("rect")
+             .attr("x", d => x(d.data.DayOfWeek))
+             .attr("width", x.bandwidth())
+             .attr("y", d => y(d[1]))
+             .attr("height", d => y(d[0]) - y(d[1]));
+        }
+    </script>
+</body>
+</html>
